@@ -53,7 +53,7 @@ export interface PlaygroundConfig {
 
 const config: PlaygroundConfig = {
   name: 'Paxeer User Stats API',
-  description: 'Portfolio tracking and analytics service for Paxeer Network wallets.  Provides real-time portfolio data, token holdings, transaction history, PNL tracking, and chart data for visualization. ## Features - **Portfolio Overview**: Complete wallet summary with native and token holdings - **Token Holdings**: Detailed token balances with USD values- **Transaction History**: Native transactions and ERC-20/721 transfers - **PNL Tracking**: Daily profit/loss calculations and history - **Chart Data**: Time-series data for portfolio analytics ## Authentication Currently no authentication required. Rate limiting applies.',
+  description: 'Portfolio tracking and analytics service for Paxeer Network wallets.',
   baseUrl: 'https://us-east-1.user-stats.sidiora.exchange',
   specPath: './openapi.yaml',
   theme: {
