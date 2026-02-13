@@ -1,0 +1,931 @@
+openapi: 3.1.0
+info:
+  title: Paxeer User Stats API
+  description: |
+    Portfolio tracking and analytics service for Paxeer Network wallets.
+    
+    Provides real-time portfolio data, token holdings, transaction history,
+    PNL tracking, and chart data for visualization.
+    
+    ## Features
+    - **Portfolio Overview**: Complete wallet summary with native and token holdings
+    - **Token Holdings**: Detailed token balances with USD values
+    - **Transaction History**: Native transactions and ERC-20/721 transfers
+    - **PNL Tracking**: Daily profit/loss calculations and history
+    - **Chart Data**: Time-series data for portfolio analytics
+    
+    ## Authentication
+    Currently no authentication required. Rate limiting applies.
+  version: 0.1.0
+  contact:
+    name: Sidiora Team
+    email: admin@sidiora.exchange
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://us-east-1.user-stats.sidiora.exchange
+    description: Production server
+
+tags:
+  - name: Health
+    description: Service health endpoints
+  - name: Tokens
+    description: Token metadata and synchronization
+  - name: Portfolio
+    description: Portfolio data and holdings
+  - name: PNL
+    description: Profit and loss tracking
+  - name: Charts
+    description: Time-series chart data
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns service health status and version
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+                version: "0.1.0"
+
+  /api/v1/tokens:
+    get:
+      tags:
+        - Tokens
+      summary: List token statistics
+      description: Returns token metadata statistics and counts
+      operationId: listTokens
+      responses:
+        '200':
+          description: Token statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenStats'
+              example:
+                total: 168
+                complete_basic: 157
+                with_icon: 67
+                with_price: 140
+                erc20_count: 161
+                erc721_count: 7
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/tokens/audit:
+    get:
+      tags:
+        - Tokens
+      summary: Audit token metadata
+      description: Returns detailed token metadata completeness report
+      operationId: auditTokens
+      responses:
+        '200':
+          description: Token audit report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenAuditResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/tokens/sync:
+    post:
+      tags:
+        - Tokens
+      summary: Sync tokens from Paxscan
+      description: Triggers synchronization of token metadata from Paxscan database
+      operationId: syncTokens
+      responses:
+        '200':
+          description: Sync completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenSyncResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/tokens/{address}:
+    get:
+      tags:
+        - Tokens
+      summary: Get token metadata
+      description: Returns metadata for a specific token by contract address
+      operationId: getToken
+      parameters:
+        - $ref: '#/components/parameters/TokenAddress'
+      responses:
+        '200':
+          description: Token metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenMetadata'
+        '404':
+          description: Token not found
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/prices/sync:
+    post:
+      tags:
+        - Tokens
+      summary: Sync token prices
+      description: |
+        Triggers price synchronization from all sources:
+        - Network pools (HLPMM, SwapDex)
+        - External APIs (Moralis)
+        - Fixed stablecoin prices
+      operationId: syncPrices
+      responses:
+        '200':
+          description: Price sync completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceSyncResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/portfolio/{address}:
+    get:
+      tags:
+        - Portfolio
+      summary: Get full portfolio
+      description: Returns complete portfolio summary including native balance, all token holdings, and totals
+      operationId: getPortfolio
+      parameters:
+        - $ref: '#/components/parameters/WalletAddress'
+      responses:
+        '200':
+          description: Portfolio data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Portfolio'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/portfolio/{address}/holdings:
+    get:
+      tags:
+        - Portfolio
+      summary: Get token holdings
+      description: Returns only the token holdings for a wallet address
+      operationId: getHoldings
+      parameters:
+        - $ref: '#/components/parameters/WalletAddress'
+      responses:
+        '200':
+          description: Token holdings list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TokenHolding'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/portfolio/{address}/transactions:
+    get:
+      tags:
+        - Portfolio
+      summary: Get transactions
+      description: Returns transaction history including native transfers and token transfers
+      operationId: getTransactions
+      parameters:
+        - $ref: '#/components/parameters/WalletAddress'
+        - name: limit
+          in: query
+          description: Maximum number of transactions to return (max 100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: offset
+          in: query
+          description: Number of transactions to skip for pagination
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Transaction list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/portfolio/{address}/balance:
+    get:
+      tags:
+        - PNL
+      summary: Get balance with daily PNL
+      description: Returns current total balance in USD with daily profit/loss calculation
+      operationId: getBalance
+      parameters:
+        - $ref: '#/components/parameters/WalletAddress'
+      responses:
+        '200':
+          description: Balance with PNL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+              example:
+                address: "0x7495f10e92d9c9d9fbd7b82850c0a005a62f3221"
+                native_balance_usd: "28983226.00"
+                token_balance_usd: "1234.56"
+                total_balance_usd: "28984460.56"
+                native_balance: "2881036.48"
+                token_count: 15
+                daily_pnl_usd: "1250.00"
+                daily_pnl_percent: "0.04"
+                computed_at: "2026-02-04T08:15:00Z"
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/portfolio/{address}/pnl:
+    get:
+      tags:
+        - PNL
+      summary: Get PNL history
+      description: Returns historical daily PNL data for charting and analysis
+      operationId: getPnlHistory
+      parameters:
+        - $ref: '#/components/parameters/WalletAddress'
+        - name: days
+          in: query
+          description: Number of days of history (max 365)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+            default: 30
+      responses:
+        '200':
+          description: PNL history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PnlHistoryResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/portfolio/{address}/charts/value:
+    get:
+      tags:
+        - Charts
+      summary: Portfolio value chart
+      description: Returns time-series data of total portfolio value for charting
+      operationId: getPortfolioValueChart
+      parameters:
+        - $ref: '#/components/parameters/WalletAddress'
+        - $ref: '#/components/parameters/ChartDays'
+      responses:
+        '200':
+          description: Chart data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartResponse'
+              example:
+                address: "0x7495f10e92d9c9d9fbd7b82850c0a005a62f3221"
+                chart_type: "portfolio_value"
+                days: 30
+                data:
+                  - date: "2026-02-04"
+                    value: "28984460.56"
+                  - date: "2026-02-03"
+                    value: "28983210.00"
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/portfolio/{address}/charts/pnl:
+    get:
+      tags:
+        - Charts
+      summary: Daily PNL chart
+      description: Returns time-series data of daily profit/loss for charting
+      operationId: getPnlChart
+      parameters:
+        - $ref: '#/components/parameters/WalletAddress'
+        - $ref: '#/components/parameters/ChartDays'
+      responses:
+        '200':
+          description: Chart data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartResponse'
+              example:
+                address: "0x7495f10e92d9c9d9fbd7b82850c0a005a62f3221"
+                chart_type: "daily_pnl"
+                days: 30
+                data:
+                  - date: "2026-02-04"
+                    value: "1250.00"
+                  - date: "2026-02-03"
+                    value: "-500.00"
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/portfolio/{address}/charts/holdings:
+    get:
+      tags:
+        - Charts
+      summary: Holdings count chart
+      description: Returns time-series data of number of token holdings
+      operationId: getHoldingsChart
+      parameters:
+        - $ref: '#/components/parameters/WalletAddress'
+        - $ref: '#/components/parameters/ChartDays'
+      responses:
+        '200':
+          description: Chart data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartResponse'
+              example:
+                address: "0x7495f10e92d9c9d9fbd7b82850c0a005a62f3221"
+                chart_type: "holdings_count"
+                days: 30
+                data:
+                  - date: "2026-02-04"
+                    value: "15"
+                  - date: "2026-02-03"
+                    value: "14"
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/portfolio/{address}/charts/tx-volume:
+    get:
+      tags:
+        - Charts
+      summary: Transaction volume chart
+      description: Returns time-series data of daily transaction volume in USD
+      operationId: getTxVolumeChart
+      parameters:
+        - $ref: '#/components/parameters/WalletAddress'
+        - $ref: '#/components/parameters/ChartDays'
+      responses:
+        '200':
+          description: Chart data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartResponse'
+              example:
+                address: "0x7495f10e92d9c9d9fbd7b82850c0a005a62f3221"
+                chart_type: "tx_volume"
+                days: 30
+                data:
+                  - date: "2026-02-04"
+                    value: "50000.00"
+                  - date: "2026-02-03"
+                    value: "25000.00"
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  parameters:
+    WalletAddress:
+      name: address
+      in: path
+      required: true
+      description: Ethereum-style wallet address (0x-prefixed, 40 hex characters)
+      schema:
+        type: string
+        pattern: '^0x[a-fA-F0-9]{40}$'
+      example: "0x7495f10e92d9c9d9fbd7b82850c0a005a62f3221"
+
+    TokenAddress:
+      name: address
+      in: path
+      required: true
+      description: Token contract address
+      schema:
+        type: string
+        pattern: '^0x[a-fA-F0-9]{40}$'
+      example: "0x6c32c255eebd6a72b56ee82454d7140020919652"
+
+    ChartDays:
+      name: days
+      in: query
+      description: Number of days of data to return (max 365)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 365
+        default: 30
+
+  responses:
+    InternalError:
+      description: Internal server error
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: "Database connection failed"
+
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+      properties:
+        status:
+          type: string
+          description: Service status
+          enum: [ok]
+        version:
+          type: string
+          description: Service version
+
+    TokenStats:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of tokens
+        complete_basic:
+          type: integer
+          description: Tokens with complete basic metadata
+        with_icon:
+          type: integer
+          description: Tokens with icon URLs
+        with_price:
+          type: integer
+          description: Tokens with price data
+        erc20_count:
+          type: integer
+          description: Number of ERC-20 tokens
+        erc721_count:
+          type: integer
+          description: Number of ERC-721 tokens
+
+    TokenAuditResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        complete_basic:
+          type: integer
+        with_icon:
+          type: integer
+        with_price:
+          type: integer
+        verified:
+          type: integer
+        by_type:
+          type: object
+          properties:
+            erc20:
+              type: integer
+            erc721:
+              type: integer
+            erc1155:
+              type: integer
+        needing_enrichment_count:
+          type: integer
+        needing_enrichment_sample:
+          type: array
+          items:
+            type: object
+            properties:
+              address:
+                type: string
+              symbol:
+                type: string
+              missing_icon:
+                type: boolean
+              missing_price:
+                type: boolean
+              missing_decimals:
+                type: boolean
+
+    TokenSyncResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        total:
+          type: integer
+        complete:
+          type: integer
+        partial:
+          type: integer
+        missing:
+          type: integer
+        with_icon:
+          type: integer
+
+    PriceSyncResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        total_tokens:
+          type: integer
+        updated:
+          type: integer
+        by_source:
+          type: object
+          properties:
+            network:
+              type: integer
+            external:
+              type: integer
+            stablecoin:
+              type: integer
+        native_pax_price:
+          type: string
+          description: Current PAX native coin price in USD
+
+    TokenMetadata:
+      type: object
+      properties:
+        address:
+          type: string
+        symbol:
+          type: string
+        name:
+          type: string
+        decimals:
+          type: integer
+        icon_url:
+          type: string
+          nullable: true
+        price_usd:
+          type: string
+          nullable: true
+        token_type:
+          type: string
+          enum: [ERC-20, ERC-721, ERC-1155]
+
+    Portfolio:
+      type: object
+      required:
+        - address
+        - native_balance
+        - token_holdings
+        - token_count
+        - transaction_count
+        - transfer_count
+        - computed_at
+      properties:
+        address:
+          type: string
+          description: Wallet address
+        native_balance:
+          $ref: '#/components/schemas/NativeBalance'
+        token_holdings:
+          type: array
+          items:
+            $ref: '#/components/schemas/TokenHolding'
+        total_value_usd:
+          type: string
+          nullable: true
+          description: Total portfolio value in USD (2 decimal string)
+        token_count:
+          type: integer
+          description: Number of unique tokens held
+        transaction_count:
+          type: integer
+          description: Total transaction count
+        transfer_count:
+          type: integer
+          description: Total token transfer count
+        computed_at:
+          type: string
+          format: date-time
+          description: When the portfolio was computed
+
+    NativeBalance:
+      type: object
+      required:
+        - symbol
+        - balance_raw
+        - balance
+      properties:
+        symbol:
+          type: string
+          description: Native coin symbol (PAX)
+        balance_raw:
+          type: string
+          description: Raw balance in wei
+        balance:
+          type: string
+          description: Human-readable balance
+        price_usd:
+          type: string
+          nullable: true
+          description: Current USD price
+        value_usd:
+          type: string
+          nullable: true
+          description: Total USD value
+
+    TokenHolding:
+      type: object
+      required:
+        - contract_address
+        - decimals
+        - balance_raw
+        - balance
+      properties:
+        contract_address:
+          type: string
+          description: Token contract address
+        symbol:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        decimals:
+          type: integer
+        balance_raw:
+          type: string
+          description: Raw balance before decimal adjustment
+        balance:
+          type: string
+          description: Human-readable balance
+        price_usd:
+          type: string
+          nullable: true
+          description: Current USD price per token
+        value_usd:
+          type: string
+          nullable: true
+          description: Total USD value of holding
+        icon_url:
+          type: string
+          nullable: true
+
+    TransactionResponse:
+      type: object
+      required:
+        - address
+        - transactions
+        - token_transfers
+        - limit
+        - offset
+      properties:
+        address:
+          type: string
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionItem'
+        token_transfers:
+          type: array
+          items:
+            $ref: '#/components/schemas/TokenTransferItem'
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    TransactionItem:
+      type: object
+      required:
+        - tx_hash
+        - block_number
+        - from_address
+        - value
+        - value_raw
+        - gas_used
+        - gas_price
+        - gas_fee
+        - status
+        - direction
+        - tx_type
+        - token_transfers
+      properties:
+        tx_hash:
+          type: string
+          description: Transaction hash
+        block_number:
+          type: integer
+          format: int64
+        timestamp:
+          type: string
+          format: date-time
+          nullable: true
+        from_address:
+          type: string
+        to_address:
+          type: string
+          nullable: true
+        value:
+          type: string
+          description: Value in PAX (human-readable)
+        value_raw:
+          type: string
+          description: Value in wei
+        gas_used:
+          type: string
+        gas_price:
+          type: string
+        gas_fee:
+          type: string
+          description: Gas fee in PAX
+        status:
+          type: boolean
+          description: Transaction success status
+        direction:
+          type: string
+          enum: [in, out]
+        tx_type:
+          type: string
+        token_transfers:
+          type: array
+          items:
+            $ref: '#/components/schemas/TokenTransferItem'
+
+    TokenTransferItem:
+      type: object
+      required:
+        - tx_hash
+        - block_number
+        - from_address
+        - to_address
+        - token_address
+        - token_decimals
+        - amount
+        - amount_raw
+        - token_type
+        - direction
+        - log_index
+      properties:
+        tx_hash:
+          type: string
+        block_number:
+          type: integer
+          format: int64
+        timestamp:
+          type: string
+          format: date-time
+          nullable: true
+        from_address:
+          type: string
+        to_address:
+          type: string
+        token_address:
+          type: string
+        token_symbol:
+          type: string
+          nullable: true
+        token_name:
+          type: string
+          nullable: true
+        token_decimals:
+          type: integer
+        amount:
+          type: string
+          description: Human-readable amount
+        amount_raw:
+          type: string
+          description: Raw amount before decimal adjustment
+        token_type:
+          type: string
+          enum: [ERC-20, ERC-721, ERC-1155]
+        direction:
+          type: string
+          enum: [in, out]
+        log_index:
+          type: integer
+
+    BalanceResponse:
+      type: object
+      required:
+        - address
+        - native_balance_usd
+        - token_balance_usd
+        - total_balance_usd
+        - native_balance
+        - token_count
+        - computed_at
+      properties:
+        address:
+          type: string
+        native_balance_usd:
+          type: string
+          description: Native PAX balance in USD (2 decimals)
+        token_balance_usd:
+          type: string
+          description: Total token value in USD (2 decimals)
+        total_balance_usd:
+          type: string
+          description: Total portfolio value in USD (2 decimals)
+        native_balance:
+          type: string
+          description: Native PAX balance (human-readable)
+        token_count:
+          type: integer
+        daily_pnl_usd:
+          type: string
+          nullable: true
+          description: Daily profit/loss in USD
+        daily_pnl_percent:
+          type: string
+          nullable: true
+          description: Daily profit/loss percentage
+        computed_at:
+          type: string
+          format: date-time
+
+    PnlHistoryResponse:
+      type: object
+      required:
+        - address
+        - days_requested
+        - history
+      properties:
+        address:
+          type: string
+        days_requested:
+          type: integer
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/PnlHistoryItem'
+
+    PnlHistoryItem:
+      type: object
+      required:
+        - date
+        - total_value_usd
+        - native_value_usd
+        - token_value_usd
+        - pnl_usd
+        - pnl_percent
+      properties:
+        date:
+          type: string
+          format: date
+        total_value_usd:
+          type: string
+        native_value_usd:
+          type: string
+        token_value_usd:
+          type: string
+        pnl_usd:
+          type: string
+          description: Daily PNL in USD
+        pnl_percent:
+          type: string
+          description: Daily PNL percentage
+
+    ChartResponse:
+      type: object
+      required:
+        - address
+        - chart_type
+        - days
+        - data
+      properties:
+        address:
+          type: string
+        chart_type:
+          type: string
+          enum: [portfolio_value, daily_pnl, holdings_count, tx_volume]
+        days:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChartDataPoint'
+
+    ChartDataPoint:
+      type: object
+      required:
+        - date
+        - value
+      properties:
+        date:
+          type: string
+          format: date
+        value:
+          type: string
+          description: Value (formatted to 2 decimals for USD values)
